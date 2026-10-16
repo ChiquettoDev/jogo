@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#100e19">
+<title>Limiar de Cinza</title>
+<style>
+  :root { color-scheme: dark; --ink:#eee9df; --muted:#aaa5ae; --panel:#171421; --line:#403849; --ember:#e58c62; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; width:100%; height:100%; overflow:hidden; background:#090811; color:var(--ink); font-family:Georgia,"Times New Roman",serif; }
+  body { display:grid; place-items:center; }
+  #shell { position:relative; width:min(100vw,177.78vh); height:min(100vh,56.25vw); background:#100e19; overflow:hidden; box-shadow:0 0 90px #000; }
+  canvas { display:block; width:100%; height:100%; image-rendering:pixelated; image-rendering:crisp-edges; }
+  #title { position:absolute; z-index:2; top:4.2%; left:50%; transform:translateX(-50%); text-align:center; pointer-events:none; text-shadow:0 2px 4px #090811; white-space:nowrap; }
+  #title strong { display:block; font-weight:normal; letter-spacing:.22em; font-size:clamp(13px,2.15vw,24px); }
+  #title span { color:#c1b7bd; font:clamp(8px,1vw,11px) Arial,sans-serif; letter-spacing:.23em; }
+  #hint { position:absolute; z-index:2; left:50%; bottom:5%; transform:translateX(-50%); text-align:center; color:#ddd2ce; font:clamp(9px,1vw,12px) Arial,sans-serif; text-shadow:0 1px 3px #000; white-space:nowrap; pointer-events:none; }
+  #veil { position:absolute; z-index:3; inset:0; display:grid; place-items:center; padding:7%; text-align:center; background:linear-gradient(90deg,rgba(9,8,16,.84),rgba(13,10,22,.73),rgba(9,8,16,.84)); }
+  #veil.hidden { display:none; }
+  .panel { max-width:620px; padding:clamp(20px,4vw,44px); border:1px solid #62505d; background:rgba(18,15,27,.94); box-shadow:0 18px 70px #0009; }
+  .panel h1 { margin:0 0 7px; font-size:clamp(28px,5vw,48px); font-weight:normal; letter-spacing:.14em; }
+  .panel .sub { color:#d28c72; letter-spacing:.25em; font:11px Arial,sans-serif; text-transform:uppercase; }
+  .panel p { max-width:470px; margin:18px auto; color:#d0c8cb; line-height:1.55; font-size:clamp(13px,1.5vw,16px); }
+  button { font:inherit; }
+  .start { margin-top:8px; padding:12px 26px; color:#17111a; border:0; background:#d9906f; letter-spacing:.14em; cursor:pointer; }
+  .start:hover { background:#f0ae85; }
+  .small { color:#9d95a0!important; font:11px Arial,sans-serif; }
+  #touch { display:none; position:absolute; inset:auto 3% 5%; z-index:2; justify-content:space-between; align-items:end; pointer-events:none; }
+  .touch-group { display:flex; gap:8px; pointer-events:auto; }
+  .touch-btn { width:clamp(42px,8vw,68px); height:clamp(42px,8vw,68px); border-radius:50%; color:#eee9df; background:#211c2bbd; border:1px solid #aaa1ad88; font:20px Arial,sans-serif; touch-action:none; }
+  @media (pointer:coarse) { #touch { display:flex; } #hint { bottom:19%; } }
+  @media (max-height:430px) { #title { top:2%; } #hint { bottom:2%; } }
+</style>
+</head>
+<body>
+<main id="shell" aria-label="Limiar de Cinza, jogo de plataforma">
+  <canvas id="game" width="384" height="216" aria-label="Área do jogo"></canvas>
+  <div id="title"><strong>LIMIAR DE CINZA</strong><span>O MOSTEIRO SOB A LUA</span></div>
+  <div id="hint">A/D ou ←/→ mover · Espaço saltar · X atacar · E interagir</div>
+  <div id="touch" aria-label="Controles de toque">
+    <div class="touch-group"><button class="touch-btn" data-hold="left" aria-label="Mover à esquerda">←</button><button class="touch-btn" data-hold="right" aria-label="Mover à direita">→</button></div>
+    <div class="touch-group"><button class="touch-btn" data-press="attack" aria-label="Atacar">✦</button><button class="touch-btn" data-press="jump" aria-label="Pular">↑</button><button class="touch-btn" data-press="interact" aria-label="Interagir">E</button></div>
+  </div>
+  <section id="veil"><div class="panel" id="panel"></div></section>
+</main>
+<script>
+(() => {
+  'use strict';
+  const canvas = document.getElementById('game'), ctx = canvas.getContext('2d', {alpha:false});
+  const veil = document.getElementById('veil'), panel = document.getElementById('panel'), hint = document.getElementById('hint');
+  const W=canvas.width,H=canvas.height, FLOOR=184, WORLD=2600;
+  const keys = Object.create(null), pressed = Object.create(null), touch = Object.create(null);
+  let mode='title', last=0, time=0, camera=0, message='', messageUntil=0, shake=0, slash=0, checkpoint=70;
+  const platforms=[
+    {x:280,y:151,w:108},{x:420,y:125,w:80},{x:590,y:157,w:120},
+    {x:770,y:135,w:90},{x:930,y:151,w:120},{x:1110,y:122,w:105},
+    {x:1325,y:150,w:130},{x:1510,y:128,w:92},{x:1700,y:149,w:110},
+    {x:1900,y:124,w:100},{x:2110,y:151,w:115},{x:2330,y:139,w:135}
+  ];
+  const shards=[{x:330,y:139,got:false},{x:1158,y:110,got:false},{x:1742,y:137,got:false}];
+  const enemies=[
+    {x:515,y:FLOOR-14,home:515,range:62,hp:2,kind:'shade',alive:true,dir:1,hit:0},
+    {x:870,y:112,home:870,range:34,hp:1,kind:'bat',alive:true,dir:-1,hit:0,air:true},
+    {x:1420,y:FLOOR-14,home:1420,range:75,hp:2,kind:'shade',alive:true,dir:1,hit:0},
+    {x:1980,y:110,home:1980,range:45,hp:1,kind:'bat',alive:true,dir:1,hit:0,air:true}
+  ];
+  const hero={x:70,y:FLOOR-24,vx:0,vy:0,w:12,h:24,face:1,hp:5,max:5,ground:false,ifr:0,attack:0,anim:0};
+
+  function panelContent(title,sub,body,button,small='') {
+    panel.innerHTML=`<h1>${title}</h1><div class="sub">${sub}</div><p>${body}</p><button class="start" id="start">${button}</button>${small?`<p class="small">${small}</p>`:''}`;
+    document.getElementById('start').addEventListener('click',()=>mode==='title'?startGame():restart());
+  }
+  panelContent('LIMIAR DE CINZA','O MOSTEIRO SOB A LUA',
+    'Uma vigília terminou e os sinos continuam tocando. Atravesse as ruínas, reúna três ecos e encontre a saída antes que a noite se feche.',
+    'INICIAR JORNADA','Jogo original · use teclado, controle ou os botões de toque.');
+
+  function startGame(){mode='play';veil.classList.add('hidden');last=performance.now();hint.style.opacity='1';}
+  document.addEventListener('keydown',e=>{
+    if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown',' ','x','X','e','E'].includes(e.key)) e.preventDefault();
+    const k=e.key.toLowerCase(); if(!keys[k]) pressed[k]=true; keys[k]=true;
+    if(mode==='title'&&(k==='enter'||k===' ')) startGame();
+    if(mode==='dead'&&k==='enter') restart();
+    if(mode==='win'&&k==='enter') restart();
+  });
+  document.addEventListener('keyup',e=>{keys[e.key.toLowerCase()]=false;});
+  window.addEventListener('blur',()=>{for(const k in keys)keys[k]=false;});
+  for(const b of document.querySelectorAll('[data-hold],[data-press]')){
+    const down=e=>{e.preventDefault();const k=b.dataset.hold||b.dataset.press;touch[k]=true;};
+    const up=e=>{e.preventDefault();const k=b.dataset.hold||b.dataset.press;touch[k]=false;if(b.dataset.press)pressed[k]=true;};
+    b.addEventListener('pointerdown',down); b.addEventListener('pointerup',up); b.addEventListener('pointercancel',up); b.addEventListener('pointerleave',up);
+  }
+  function just(...list){for(const k of list){if(pressed[k]){pressed[k]=false;return true;}}return false;}
+  const down=(...list)=>list.some(k=>keys[k]||touch[k]);
+  function gamepad(){
+    const pads=navigator.getGamepads?navigator.getGamepads():[]; const p=pads&&[...pads].find(x=>x&&x.connected); if(!p)return;
+    if(p.axes[0]<-.25||p.buttons[14]?.pressed) touch.left=true; else touch.left=false;
+    if(p.axes[0]>.25||p.buttons[15]?.pressed) touch.right=true; else touch.right=false;
+    if(p.buttons[0]?.pressed) pressed.jump=true;
+    if(p.buttons[2]?.pressed) pressed.attack=true;
+    if(p.buttons[1]?.pressed) pressed.interact=true;
+  }
+  function startFresh(){for(const s of shards)s.got=false;for(const e of enemies)e.alive=true;hero.x=70;hero.y=FLOOR-24;hero.hp=hero.max;hero.vx=hero.vy=0;checkpoint=70;camera=0;}
+  function restart(){
+    if(mode==='dead') { hero.x=checkpoint;hero.y=FLOOR-hero.h;hero.hp=hero.max;hero.vx=hero.vy=0;hero.ifr=1.5;mode='play';veil.classList.add('hidden');last=performance.now();return; }
+    startFresh(); mode='play'; veil.classList.add('hidden');last=performance.now();
+  }
+  function collect(){let n=0;for(const s of shards){if(s.got)n++;else if(Math.abs(hero.x-s.x)<14&&Math.abs((hero.y+hero.h/2)-s.y)<23){s.got=true;n++;say('Um eco antigo repousa em você.');}}return n;}
+  function say(text){message=text;messageUntil=time+2.5;}
+  function hurt(){if(hero.ifr>0)return;hero.hp--;hero.ifr=1.15;hero.vx=-hero.face*105;hero.vy=-145;shake=5;say('A sombra atravessa sua guarda.');if(hero.hp<=0){mode='dead';veil.classList.remove('hidden');panelContent('A NOITE VENCEU','FIM DA VIGÍLIA','As ruínas ainda guardam caminhos. O altar mantém sua vigília.','RETOMAR A VIGÍLIA');}}
+  function update(dt){
+    if(mode!=='play')return; time+=dt; gamepad();
+    hero.anim+=dt; hero.ifr=Math.max(0,hero.ifr-dt); hero.attack=Math.max(0,hero.attack-dt); slash=Math.max(0,slash-dt);
+    const left=down('a','arrowleft','left'), right=down('d','arrowright','right');
+    if(left!==right){hero.vx+=(left?-1:1)*580*dt;hero.face=left?-1:1;} else hero.vx*=Math.pow(.0007,dt);
+    hero.vx=Math.max(-112,Math.min(112,hero.vx));
+    if(just(' ','w','arrowup','jump')&&hero.ground){hero.vy=-258;hero.ground=false;}
+    if(just('x','attack')&&hero.attack<=0){hero.attack=.34;slash=.16;for(const e of enemies){if(!e.alive)continue;const dx=e.x-(hero.x+hero.w/2);if(Math.abs(dx)<39&&Math.sign(dx)===hero.face&&Math.abs(e.y+10-(hero.y+12))<31){e.hp--;e.hit=.2;e.x+=hero.face*12;if(e.hp<=0){e.alive=false;say('A sombra se desfaz no pó.');}}}}
+    if(just('e','interact')){
+      if(Math.abs(hero.x-1225)<42){checkpoint=1200;hero.hp=hero.max;say('Altar aceso. Sua vigília recomeça aqui.');}
+      if(hero.x>2460){if(collect()>=3){mode='win';veil.classList.remove('hidden');panelContent('A PORTA SE ABRE','FIM DO PRIMEIRO CAPÍTULO','Os ecos encontraram repouso. A madrugada toca as pedras do mosteiro.','JOGAR NOVAMENTE','Uma aventura original de exploração gótica.');}else say('A porta exige três ecos.');}
+    }
+    hero.vy=Math.min(390,hero.vy+620*dt);const oldY=hero.y;hero.x=Math.max(0,Math.min(WORLD-hero.w,hero.x+hero.vx*dt));hero.y+=hero.vy*dt;hero.ground=false;
+    if(hero.y+hero.h>=FLOOR){hero.y=FLOOR-hero.h;hero.vy=0;hero.ground=true;}
+    if(hero.vy>=0){for(const p of platforms){if(hero.x+hero.w>p.x&&hero.x<p.x+p.w&&oldY+hero.h<=p.y+4&&hero.y+hero.h>=p.y){hero.y=p.y-hero.h;hero.vy=0;hero.ground=true;break;}}}
+    for(const e of enemies){if(!e.alive)continue;e.hit=Math.max(0,e.hit-dt);e.x+=e.dir*(e.hit?14:27)*dt;if(e.x<e.home-e.range)e.dir=1;if(e.x>e.home+e.range)e.dir=-1;if(Math.abs(hero.x-e.x)<14&&Math.abs(hero.y-e.y)<22)hurt();}
+    collect();
+    camera=Math.max(0,Math.min(WORLD-W,(hero.x+hero.w/2)-W*.43));shake=Math.max(0,shake-dt*18);
+    if(hero.x>2450)sayIfClear();
+  }
+  function sayIfClear(){if(time>messageUntil){message='A porta do mosteiro · pressione E';messageUntil=time+.05;}}
+  function rect(x,y,w,h,c){ctx.fillStyle=c;ctx.fillRect(Math.round(x),Math.round(y),Math.round(w),Math.round(h));}
+  function draw(){
+    const sx=(Math.random()-.5)*shake, sy=(Math.random()-.5)*shake;ctx.save();ctx.translate(sx,sy);
+    rect(0,0,W,H,'#100e19');
+    // Distant vaulted nave and stained-glass rose windows
+    const shift=camera*.16;
+    for(let i=-1;i<6;i++){
+      let x=i*100-(shift%100);rect(x,24,2,119,'#282235');rect(x+96,24,2,119,'#282235');
+      ctx.fillStyle='#1c1929';ctx.beginPath();ctx.moveTo(x,54);ctx.quadraticCurveTo(x+48,-11,x+98,54);ctx.lineTo(x+98,60);ctx.quadraticCurveTo(x+48,3,x,60);ctx.fill();
+      if(i%2===0){rect(x+34,57,28,42,'#352338');ctx.strokeStyle='#84617a';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(x+48,60);ctx.lineTo(x+48,98);ctx.moveTo(x+36,78);ctx.lineTo(x+60,78);ctx.stroke();rect(x+46,57,4,42,'#d39178');}
+    }
+    // High moonlight, floor and stone courses
+    rect(0,151,W,33,'#211d2a');rect(0,157,W,2,'#514354');
+    for(let i=0;i<42;i++){let x=(i*37-(camera*.52)%37);rect(x,161+(i%3)*7,19,1,i%2?'#332c3a':'#2c2735');}
+    for(let x=0;x<WORLD;x+=112){const sxw=x-camera;if(sxw<-30||sxw>W+30)continue;rect(sxw,FLOOR,6,32,'#342c3a');rect(sxw-2,FLOOR,10,3,'#655263');}
+    // Near stone pillars
+    for(let i=-1;i<6;i++){const x=i*126-(camera%126);rect(x,81,9,76,'#332b39');rect(x-3,78,15,4,'#5a4858');rect(x+2,86,2,65,'#48394a');rect(x-4,153,17,5,'#594758');}
+    for(const p of platforms){const x=p.x-camera;if(x<-160||x>W+20)continue;rect(x,p.y,p.w,6,'#625161');rect(x,p.y+6,p.w,7,'#382e3f');for(let t=8;t<p.w;t+=20)rect(x+t,p.y+9,2,4,'#514253');}
+    // old altar / checkpoint
+    let ax=1225-camera;if(ax>-20&&ax<W+20){rect(ax-12,FLOOR-17,24,17,'#514052');rect(ax-8,FLOOR-21,16,4,'#9b715f');rect(ax-1,FLOOR-36,2,14,'#e4b184');rect(ax-3,FLOOR-40,6,5,'#f6d6a4');}
+    // Torchlight motes
+    for(let i=0;i<9;i++){const x=i*83-(camera*.8%83);const flick=Math.sin(time*8+i*3)*2;rect(x,116+flick,2,6,'#d47b53');rect(x-2,120+flick,6,3,'#765047');rect(x-2,111+flick,6,4,'#9d5945');}
+    for(const s of shards){if(s.got)continue;const x=s.x-camera;if(x<-10||x>W+10)continue;const bob=Math.sin(time*2+s.x)*2;rect(x-2,s.y-7+bob,4,14,'#d5bb91');rect(x-4,s.y-2+bob,8,5,'#f2d7a3');rect(x-1,s.y-4+bob,2,9,'#fff0c6');}
+    for(const e of enemies)if(e.alive)drawEnemy(e);
+    drawDoor();drawHero();
+    // HUD
+    rect(10,11,95,28,'#100e19');rect(10,11,95,1,'#59475b');
+    for(let i=0;i<hero.max;i++){rect(16+i*12,18,9,5,'#47323c');if(i<hero.hp)rect(16+i*12,18,9,5,'#c87668');}
+    const n=shards.filter(s=>s.got).length;rect(16,29,5,5,'#f2d7a3');rect(18,27,2,9,'#d5bb91');ctx.fillStyle='#ddd4d4';ctx.font='8px Arial';ctx.fillText(`ECOS ${n}/3`,27,35);
+    if(message&&time<messageUntil){rect(97,188,190,17,'#100e19dd');ctx.fillStyle='#eee3dc';ctx.textAlign='center';ctx.font='8px Arial';ctx.fillText(message,W/2,199);ctx.textAlign='left';}
+    ctx.restore();
+  }
+  function drawHero(){
+    const x=hero.x-camera,y=hero.y;
+    if(hero.ifr>0&&Math.floor(time*14)%2===0)return;
+    // trailing oxblood cloak, ivory tunic and original pixel silhouette
+    rect(x+2-hero.face*5,y+12,hero.face===1?7:6,9,'#653342');rect(x+3-hero.face*3,y+16,7,7,'#482b3a');
+    rect(x+3,y+4,7,14,'#d8c9ae');rect(x+2,y+8,9,8,'#e9dfc8');
+    rect(x+4,y,6,6,'#d0b899');rect(x+3,y-1,8,3,'#2a202c');rect(x+6+hero.face*2,y+2,2,2,'#e9ad82');
+    rect(x+3,y+18,3,6,'#302b3a');rect(x+8,y+18,3,6,'#302b3a');
+    if(slash>0){const ax=x+(hero.face>0?11:-24);rect(ax,y+7,14,2,'#f5dcaf');rect(ax+(hero.face>0?5:2),y+4,2,8,'#cf9b7f');rect(ax+(hero.face>0?10:0),y+5,2,6,'#fff0d1');}
+  }
+  function drawEnemy(e){
+    const x=e.x-camera,y=e.y;
+    if(e.kind==='bat'){const flap=Math.sin(time*13+e.home)*3;rect(x-8,y+3+flap,7,5,'#79628b');rect(x+2,y+3-flap,7,5,'#79628b');rect(x-3,y,7,9,'#34263f');rect(x-1,y+3,2,2,'#e28a75');}
+    else{rect(x-5,y+2,11,13,'#35283e');rect(x-4,y,9,5,'#514056');rect(x-2,y+5,2,2,'#d38a74');rect(x+2,y+5,2,2,'#d38a74');rect(x-6,y+13,13,3,'#221c2c');}
+    if(e.hit>0)rect(x-5,y,12,3,'#eee2c9');
+  }
+  function drawDoor(){const x=2516-camera;if(x<-45||x>W+45)return;rect(x-15,101,31,83,'#443345');rect(x-10,108,21,76,'#15121f');rect(x-8,111,17,73,'#292131');rect(x-16,99,33,4,'#806078');rect(x-13,96,27,3,'#554053');if(shards.every(s=>s.got)){rect(x-5,121,10,3,'#e7bb8d');rect(x-2,116,4,14,'#f6ddb1');}}
+  function loop(now){const dt=Math.min(.035,(now-last)/1000||0);last=now;if(mode==='play')update(dt);else time+=dt;draw();requestAnimationFrame(loop);}
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

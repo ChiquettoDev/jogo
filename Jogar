@@ -1,0 +1,11 @@
+#!/bin/sh
+HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+PAGE="$HERE/index.html"
+if command -v xdg-open >/dev/null 2>&1; then
+  exec xdg-open "$PAGE"
+elif command -v gio >/dev/null 2>&1; then
+  exec gio open "$PAGE"
+else
+  echo "Abra este arquivo em um navegador: $PAGE" >&2
+  exit 1
+fi

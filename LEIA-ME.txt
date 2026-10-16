@@ -1,0 +1,34 @@
+LIMIAR DE CINZA — O MOSTEIRO SOB A LUA
+=======================================
+
+Jogo original de plataforma e exploração em pixel art, feito para navegador.
+Não usa arquivos, personagens, mapas, músicas ou código de Castlevania.
+
+COMO JOGAR NO LINUX
+1. Extraia a pasta completa.
+2. Dê duplo clique em Jogar.desktop; ou abra um terminal nesta pasta e rode:
+     ./Jogar
+3. Também é possível abrir index.html diretamente no Firefox, Chromium ou
+   outro navegador moderno.
+
+CONTROLES
+- A / D ou setas: mover
+- Espaço, W ou seta para cima: pular
+- X: atacar
+- E: interagir com o altar e a porta
+- Controle USB/Bluetooth: analógico ou direcional para mover, A para pular,
+  X para atacar e B para interagir (o mapeamento pode variar por navegador).
+- Em tela tátil, aparecem botões na tela.
+
+OBJETIVO
+Atravesse as ruínas do mosteiro, reúna três ecos e interaja com a porta ao
+final. O altar no meio da travessia recupera a vida e define o retorno após
+uma derrota. O jogo roda localmente e não precisa de internet.
+
+HOSPEDAGEM
+O jogo é estático: para publicar, envie index.html para um serviço de páginas
+estáticas. O arquivo não precisa de servidor de jogo nem banco de dados. A
+disponibilidade contínua depende do provedor de hospedagem escolhido.
+
+Os gráficos, nomes e personagens deste protótipo são originais. É uma pequena
+aventura jogável, não uma recriação de outro jogo.
